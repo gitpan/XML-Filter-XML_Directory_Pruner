@@ -36,7 +36,7 @@ use strict;
 use Exporter;
 use XML::SAX::Base;
 
-$XML::Filter::XML_Directory_Pruner::VERSION   = '1.0';
+$XML::Filter::XML_Directory_Pruner::VERSION   = '1.1';
 @XML::Filter::XML_Directory_Pruner::ISA       = qw (Exporter XML::SAX::Base);
 @XML::Filter::XML_Directory_Pruner::EXPORT    = qw ();
 @XML::Filter::XML_Directory_Pruner::EXPORT_OK = qw ();
@@ -90,19 +90,19 @@ sub include {
     my $args = { @_ };
 
     if (ref($args->{'include'})  eq "ARRAY") {
-      push (@{$self->{'__include'}},@{$args->{'exclude'}});
+      push (@{$self->{__PACKAGE__.'__include'}},@{$args->{'exclude'}});
     }
 
     if ($args->{'matching'}) {
-      $self->{'__include_matching'} = $args->{'matching'};
+      $self->{__PACKAGE__.'__include_matching'} = $args->{'matching'};
     }
 
     if (ref($args->{'starting'}) eq "ARRAY") {
-      push (@{$self->{'__include_starting'}},@{$args->{'starting'}});
+      push (@{$self->{__PACKAGE__.'__include_starting'}},@{$args->{'starting'}});
     }
 
     if (ref($args->{'ending'}) eq "ARRAY") {
-	push (@{$self->{'__include_ending'}},@{$args->{'ending'}});
+	push (@{$self->{__PACKAGE__.'__include_ending'}},@{$args->{'ending'}});
     }
 
     return 1;
@@ -161,24 +161,73 @@ sub exclude {
     my $args  = { @_ };
 
     if (ref($args->{'exclude'})  eq "ARRAY") {
-      push (@{$self->{'__exclude'}},@{$args->{'exclude'}});
+      push (@{$self->{__PACKAGE__.'__exclude'}},@{$args->{'exclude'}});
     }
 
     if ($args->{'matching'}) {
-      $self->{'__exclude_matching'} = $args->{'matching'};
+      $self->{__PACKAGE__.'__exclude_matching'} = $args->{'matching'};
     }
 
     if (ref($args->{'starting'}) eq "ARRAY") {
-      push (@{$self->{'__exclude_starting'}},@{$args->{'starting'}});
+      push (@{$self->{__PACKAGE__.'__exclude_starting'}},@{$args->{'starting'}});
     }
 
     if (ref($args->{'ending'})   eq "ARRAY") {
-      push (@{$self->{'__exclude_ending'}},@{$args->{'ending'}});
+      push (@{$self->{__PACKAGE__.'__exclude_ending'}},@{$args->{'ending'}});
     }
     
-    $self->{'__exclude_subdirs'} = $args->{'directories'};
-    $self->{'__exclude_files'}   = $args->{'files'};
+    $self->{__PACKAGE__.'__exclude_subdirs'} = $args->{'directories'};
+    $self->{__PACKAGE__.'__exclude_files'}   = $args->{'files'};
     return 1;
+}
+
+=head2 $pkg->ima($what)
+
+=cut
+
+sub ima {
+  my $self = shift;
+  my $what = shift;
+
+  if ($what) {
+    $self->{__PACKAGE__.'__ima'} = $what;
+  }
+
+  return $self->{__PACKAGE__.'__ima'};
+}
+
+=head2 $pkg->current_level()
+
+Read-only.
+
+=cut
+
+sub current_level {
+  my $self = shift;
+  return $self->{__PACKAGE__.'__level'};
+}
+
+=head2 $pkg->skip_level()
+
+=cut
+
+sub skip_level {
+  return $_[0]->{__PACKAGE__.'__skip'};
+}
+
+=head2 $pkg->debug($debug)
+
+=cut
+
+sub debug {
+  my $self = shift;
+  my $debug = shift;
+
+  if (defined($debug)) {
+    $self->{__PACKAGE__.'__debug'} = ($debug) ? 1 : 0;
+  }
+
+  return $self->{__PACKAGE__.'__debug'};
 }
 
 =head1 PRIVATE METHODS
@@ -191,16 +240,33 @@ sub start_element {
   my $self = shift;
   my $data = shift;
 
-  $self->{'__level'} ++;
+  $self->on_enter_start_element($data);
+  $self->compare($data);
 
-  if (($data->{'Name'} =~ /^(file|directory)$/) && (! $self->{'__skip'})) {
-    $self->{'__ima'} = $1;
-    $self->_compare($data->{Attributes}->{'{}name'}->{Value});
+  unless ($self->{__PACKAGE__.'__skip'}) {
+    $self->{__PACKAGE__.'__last'} = $data->{'Name'};
+    $self->SUPER::start_element($data);
   }
 
-  unless ($self->{'__skip'}) {
-    $self->{'__last'} = $data->{'Name'};
-    $self->SUPER::start_element($data);
+  return 1;
+}
+
+sub on_enter_start_element {
+  my $self = shift;
+  my $data = shift;
+
+  $self->{__PACKAGE__.'__level'} ++;
+
+  if ($self->debug()) {
+    map { print STDERR " "; } (0..$self->current_level);
+    print STDERR "[".$self->current_level."] $data->{Name} : ";
+    # Because sometimes auto-vivification
+    # is not what you want.
+    if (exists($data->{Attributes}->{'{}same'})) {
+      print STDERR $data->{Attributes}->{'{}name'}->{Value};
+    }
+
+    print STDERR "\n";
   }
 
   return 1;
@@ -214,15 +280,26 @@ sub end_element {
   my $self = shift;
   my $data = shift;
 
-  unless ($self->{'__skip'}) {
+  unless ($self->{__PACKAGE__.'__skip'}) {
     $self->SUPER::end_element($data);
   }
 
-  if ($self->{'__skip'} == $self->{'__level'}) {
-    $self->{'__skip'} = 0;
+  $self->on_exit_end_element();
+  return 1;
+}
+
+=head2 $pkg->_on_exit_end_element()
+
+=cut
+
+sub on_exit_end_element {
+  my $self = shift;
+
+  if ($self->{__PACKAGE__.'__skip'} == $self->{__PACKAGE__.'__level'}) {
+    $self->{__PACKAGE__.'__skip'} = 0;
   }
 
-  $self->{'__level'} --;
+  $self->{__PACKAGE__.'__level'} --;
   return 1;
 }
 
@@ -234,10 +311,26 @@ sub characters {
   my $self = shift;
   my $data = shift;
 
-  unless ($self->{'__skip'}) {
+  unless ($self->{__PACKAGE__.'__skip'}) {
     $self->SUPER::characters($data);
   }
   
+  return 1;
+}
+
+=head2 $pkg->compare(\%data)
+
+=cut
+
+sub compare {
+  my $self = shift;
+  my $data = shift;
+
+  if (($data->{'Name'} =~ /^(file|directory)$/) && (! $self->{__PACKAGE__.'__skip'})) {
+    $self->{__PACKAGE__.'__ima'} = $1;
+    $self->_compare($data->{Attributes}->{'{}name'}->{Value});
+  }
+
   return 1;
 }
 
@@ -263,41 +356,41 @@ sub _compare {
   #   3 depth
   # Comparing 'bar' (directory)...failed directory test...'0' (2)
 
-  if ($self->{'__level'} == 2) { return 1; }
+  if ($self->{__PACKAGE__.'__level'} == 2) { return 1; }
 
   # Include subdirectories?
 
-  if (($ok) && ($self->{'__ima'} eq "directory" && $self->{'__exclude_subdirs'})) {
+  if (($ok) && ($self->{__PACKAGE__.'__ima'} eq "directory" && $self->{__PACKAGE__.'__exclude_subdirs'})) {
     $ok = 0;
   }
 
-  if (($ok) && ($self->{'__ima'} eq "file" && $self->{'__exclude_files'})) {
+  if (($ok) && ($self->{__PACKAGE__.'__ima'} eq "file" && $self->{__PACKAGE__.'__exclude_files'})) {
     $ok = 0;
   }
 
   #
 
-  if (($ok) && ($self->{'__include_matching'})) {
-    my $pattern = $self->{'__include_matching'};
+  if (($ok) && ($self->{__PACKAGE__.'__include_matching'})) {
+    my $pattern = $self->{__PACKAGE__.'__include_matching'};
     $ok = ($data =~ /$pattern/) ? 1 : 0;
   }
 
-  if (($ok) && (ref($self->{'__include'}) eq "ARRAY")) {
-    foreach my $match (@{$self->{'__include'}}) {
+  if (($ok) && (ref($self->{__PACKAGE__.'__include'}) eq "ARRAY")) {
+    foreach my $match (@{$self->{__PACKAGE__.'__include'}}) {
       $ok = ($data =~ /^($match)$/) ? 0 : 1;
       last if (! $ok);
     }
   }
 
-  if (($ok) && (ref($self->{'__include_starting'}) eq "ARRAY")) {
-    foreach my $match (@{$self->{'__include_starting'}}) {
+  if (($ok) && (ref($self->{__PACKAGE__.'__include_starting'}) eq "ARRAY")) {
+    foreach my $match (@{$self->{__PACKAGE__.'__include_starting'}}) {
       $ok = ($data =~ /^($match)(.*)$/) ? 1 : 0;
       last if (! $ok);
     }
   }
 
-  if (($ok) && (ref($self->{'__include_ending'}) eq "ARRAY")) {
-    foreach my $match (@{$self->{'__include_ending'}}) {
+  if (($ok) && (ref($self->{__PACKAGE__.'__include_ending'}) eq "ARRAY")) {
+    foreach my $match (@{$self->{__PACKAGE__.'__include_ending'}}) {
       $ok = ($data =~ /^(.*)($match)$/) ? 1 : 0;
       last if (! $ok);
     }
@@ -305,54 +398,69 @@ sub _compare {
 
   #
 
-  if (($ok) && ($self->{'__exclude_matching'})) {
-    my $pattern = $self->{'__exclude_matching'};
+  if (($ok) && ($self->{__PACKAGE__.'__exclude_matching'})) {
+    my $pattern = $self->{__PACKAGE__.'__exclude_matching'};
     $ok = ($data =~ /$pattern/) ? 0 : 1;
   }
 
-  if (($ok) && (ref($self->{'__exclude'}) eq "ARRAY")) {
-    foreach my $match (@{$self->{'__exclude'}}) {
+  if (($ok) && (ref($self->{__PACKAGE__.'__exclude'}) eq "ARRAY")) {
+    foreach my $match (@{$self->{__PACKAGE__.'__exclude'}}) {
       $ok = ($data =~ /^($match)$/) ? 0 : 1;
       last if (! $ok);
     }
   }
 
-  if (($ok) && (ref($self->{'__exclude_starting'}) eq "ARRAY")) {
-    foreach my $match (@{$self->{'__exclude_starting'}}) {
+  if (($ok) && (ref($self->{__PACKAGE__.'__exclude_starting'}) eq "ARRAY")) {
+    foreach my $match (@{$self->{__PACKAGE__.'__exclude_starting'}}) {
       $ok = ($data =~ /^($match)(.*)$/) ? 0 : 1;
       last if (! $ok);
     }
   }
 
-  if (($ok) && (ref($self->{'__exclude_ending'}) eq "ARRAY")) {
-    foreach my $match (@{$self->{'__exclude_ending'}}) {
+  if (($ok) && (ref($self->{__PACKAGE__.'__exclude_ending'}) eq "ARRAY")) {
+    foreach my $match (@{$self->{__PACKAGE__.'__exclude_ending'}}) {
       $ok = ($data =~ /^(.*)($match)$/) ? 0 : 1;
       last if (! $ok);
     }
   }
 
   if (! $ok) {
-    $self->{'__skip'} = $self->{'__level'};
+    if ($self->debug()) {
+      print STDERR "SKIPPING '$data' at $self->{__PACKAGE__.'__level'}\n";
+    }
+
+    $self->{__PACKAGE__.'__skip'} = $self->{__PACKAGE__.'__level'};
   }
 
   return 1;
 }
 
+
 =head1 VERSION
 
-1.0
+1.1
 
 =head1 DATE
 
-May 04, 2002
+June 30, 2002
 
 =head1 AUTHOR
 
 Aaron Straup Cope
 
+=head1 TO DO
+
+=over
+
+=item *
+
+Allow for inclusion/exclusion based on mime-type
+
+=back
+
 =head1 SEE ALSO
 
-L<XML::Directory>
+L<XML::Directory::SAX>
 
 L<XML::SAX::Base>
 
