@@ -37,7 +37,7 @@ use Exporter;
 use XML::SAX::Base;
 use MIME::Types;
 
-$XML::Filter::XML_Directory_Pruner::VERSION   = '1.2';
+$XML::Filter::XML_Directory_Pruner::VERSION   = '1.3';
 @XML::Filter::XML_Directory_Pruner::ISA       = qw (Exporter XML::SAX::Base);
 @XML::Filter::XML_Directory_Pruner::EXPORT    = qw ();
 @XML::Filter::XML_Directory_Pruner::EXPORT_OK = qw ();
@@ -522,13 +522,19 @@ sub _compare {
 
   #
 
-  if (($ok) && ($self->{__PACKAGE__.'__exclude_matching'} eq "ARRAY")) {
+  if (($ok) &&(ref($self->{__PACKAGE__.'__exclude_matching'}) eq "ARRAY")) {
+
     foreach  my $pattern (@{$self->{__PACKAGE__.'__exclude_matching'}}) {
+
+      print STDERR "25 - COMPARING '$data' w/ '$pattern'\n"
+	if ($self->debug() >= 4);
+
       $ok = ($data =~ /$pattern/) ? 0 : 1;
 
       if (! $ok) {
 	print STDERR "30 - EXCLUDING $data BECAUSE IT MATCHES PATTERN '$pattern'\n"
 	  if ($self->debug() >= 3);
+
 	last;
       }
     }
@@ -585,11 +591,11 @@ sub _compare {
 
 =head1 VERSION
 
-1.2
+1.3
 
 =head1 DATE
 
-July 07, 2002
+July 20, 2002
 
 =head1 AUTHOR
 

@@ -7,7 +7,7 @@ WriteMakefile(
 	       ABSTRACT => '') : (),
 	      'VERSION_FROM' => 'lib/XML/Filter/XML_Directory_Pruner.pm',
 	      'PREREQ_PM'    => {
-				 XML::Directory => '0.90',
+				 XML::Directory => '0.97',
 				 XML::SAX::Base => '1.02',
 				 MIME::Types    => '0.4',
 				},
